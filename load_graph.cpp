@@ -55,7 +55,8 @@ void loadGraph(const string& graph_file,
     }
 
     // Load mapping file (only for mention/retweet/reply)
-    unordered_map<int, int> metis_to_original; // Maps metis ID to original ID
+    // Maps metis node ID to original node ID
+    unordered_map<int, int> metis_to_original;
     if (use_mapping) {
         ifstream in(mapping_file);
         if (!in) {
@@ -69,6 +70,11 @@ void loadGraph(const string& graph_file,
         }
         
         cout << "Loaded " << metis_to_original.size() << " mappings from " << mapping_file << endl;
+        // Debug: Print mapping contents
+        // cout << "Mapping contents (metis_id -> original_id):" << endl;
+        // for (const auto& [metis, orig] : metis_to_original) {
+        //     cout << "  " << metis << " -> " << orig << endl;
+        // }
     }
 
     // Load graph
@@ -90,7 +96,6 @@ void loadGraph(const string& graph_file,
     // Process each node's adjacency list
     int node_id = 0;
     while (getline(infile, line)) {
-        istringstream iss(line);
         node_id++; // 1-based node ID in the .graph file
         
         // Skip if we don't have partition information for this node
@@ -102,23 +107,33 @@ void loadGraph(const string& graph_file,
         // Get partition for this node from the .part.8 file
         int partition = node_to_partition[node_id-1]; // 0-based indexing for partition array
         
+        // For debugging
+        // cout << "Processing node_id=" << node_id << ", partition=" << partition;
+        
         // Get original node ID using mapping
         int orig_node;
         if (use_mapping) {
             // For non-social graphs, use the mapping file
             auto it = metis_to_original.find(node_id);
             if (it != metis_to_original.end()) {
-                orig_node = it->second;
+                orig_node = it->first;
+                // cout << ", maps to orig_node=" << orig_node << endl;
             } else {
                 // If no mapping exists, use node_id as fallback
                 orig_node = node_id;
+                // cout << ", no mapping found (using node_id)" << endl;
             }
         } else {
             // For social graph, node_id is already the original ID
             orig_node = node_id;
+            // cout << ", no mapping needed (social graph)" << endl;
         }
 
-        // Parse all neighbors and weights for this node
+        // Parse neighbors for this node
+        istringstream iss(line);
+        string nbr_line = line;
+        // cout << "  Line: " << nbr_line << endl;
+        
         int neighbor, weight;
         while (iss >> neighbor) {
             if (use_mapping) {
@@ -134,9 +149,11 @@ void loadGraph(const string& graph_file,
             if (use_mapping) {
                 auto it = metis_to_original.find(neighbor);
                 if (it != metis_to_original.end()) {
-                    orig_nbr = it->second;
+                    orig_nbr = it->first;
+                    // cout << "  Neighbor " << neighbor << " maps to " << orig_nbr << endl;
                 } else {
                     orig_nbr = neighbor;
+                    // cout << "  Neighbor " << neighbor << " has no mapping" << endl;
                 }
             } else {
                 orig_nbr = neighbor;
@@ -181,23 +198,6 @@ int main() {
         cout << "\n====== Loaded graph type: " << gtype << " ======\n";
         for (int i = 0; i < NUM_PARTS; ++i) {
             cout << "Subgraph " << i << " has " << subgraphs[i].size() << " nodes." << endl;
-        }
-
-        // Print example nodes for verification
-        if (gtype == "mention") {
-            cout << "\n--- Example nodes from mention graph ---" << endl;
-            for (int i = 0; i < NUM_PARTS; ++i) {
-                if (!subgraphs[i].empty()) {
-                    auto it = subgraphs[i].begin();
-                    cout << "Subgraph " << i << " example - Node " << it->first << " has " 
-                         << it->second.size() << " neighbors" << endl;
-                    
-                    if (!it->second.empty()) {
-                        cout << "  First neighbor: " << it->second[0].neighbor 
-                             << " with weight " << it->second[0].weight << endl;
-                    }
-                }
-            }
         }
 
         if (gtype == "mention") {
