@@ -4,8 +4,11 @@
 #include <mpi.h>
 #include <iostream>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <string>
+#include <algorithm>
+#include <filesystem>
 #include "load_graph.h"
 #include "Influence.h"
 #include "Top-k.h"
@@ -22,7 +25,6 @@ int main(int argc, char** argv) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    // Ensure the number of processes matches NUM_PARTS
     if (size != NUM_PARTS) {
         if (rank == 0) {
             cerr << "This program must be run with " << NUM_PARTS << " processes." << endl;
@@ -31,6 +33,12 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // Final aggregated data (only used by Rank 0)
+    unordered_map<int, vector<double>> allNodeScores;
+    unordered_map<string, int> gtypeIndex = {
+        {"mention", 0}, {"retweet", 1}, {"reply", 2}, {"social", 3}
+    };
+
     for (const auto& gtype : graph_types) {
         string base = "higgs-" + gtype + "_network";
         string graph_path = "graphs/" + base + ".graph";
@@ -38,7 +46,6 @@ int main(int argc, char** argv) {
         string map_path = "gparts/" + base + ".graph.mapping.txt";
         bool use_mapping = (gtype != "social");
 
-        // Check if all required files exist
         if (!filesystem::exists(graph_path) || !filesystem::exists(part_path) ||
             (use_mapping && !filesystem::exists(map_path))) {
             if (rank == 0) {
@@ -47,72 +54,121 @@ int main(int argc, char** argv) {
             continue;
         }
 
-        // Load the subgraph for the current rank
+
+        // Load mapping file to get real-world node IDs
+        unordered_map<int, int> localToRealWorldMapping;
+        if (use_mapping) {
+            ifstream mapFile(map_path);
+            if (!mapFile.is_open()) {
+                if (rank == 0) {
+                    cerr << "Error opening mapping file: " << map_path << endl;
+                }
+                MPI_Finalize();
+                return 1;
+            }
+
+            int local_id, real_id;
+            while (mapFile >> real_id >> local_id) {
+                localToRealWorldMapping[local_id] = real_id;
+            }
+            mapFile.close();
+        }
+
         vector<unordered_map<int, vector<Edge>>> subgraphs(NUM_PARTS);
         loadGraph(graph_path, part_path, map_path, subgraphs, use_mapping);
         const auto& local_subgraph = subgraphs[rank];
 
-        // Compute influence scores
         unordered_map<int, double> scores = computeInfluenceScores(local_subgraph);
 
         int k = 10;
         vector<pair<int, double>> localTopK = getTopKInfluencers(scores, k);
 
         if (rank == 0) {
-            // Print local top-k influencers
             cout << "\n[Rank " << rank << "] Local Top-" << k << " Influencers for Graph: " << gtype << endl;
             for (const auto& [node, score] : localTopK) {
                 cout << "Node " << node << " -> Score: " << score << endl;
             }
         }
 
-        // Pack localTopK into array for MPI_Gather (flattened: [id, score, id, score...])
         vector<double> packedLocal(2 * k);
         for (int i = 0; i < k; ++i) {
-            packedLocal[2 * i] = static_cast<double>(localTopK[i].first); // node ID
-            packedLocal[2 * i + 1] = localTopK[i].second; // score
+            packedLocal[2 * i] = static_cast<double>(localTopK[i].first);
+            packedLocal[2 * i + 1] = localTopK[i].second;
         }
 
-        // Gather all packed local top-k at rank 0
         vector<double> allPacked;
         if (rank == 0) {
-            allPacked.resize(2 * k * size); // Resize to hold data from all processes
+            allPacked.resize(2 * k * size);
         }
 
         int gather_status = MPI_Gather(packedLocal.data(), 2 * k, MPI_DOUBLE,
                                        allPacked.data(), 2 * k, MPI_DOUBLE,
                                        0, MPI_COMM_WORLD);
+
         if (gather_status != MPI_SUCCESS) {
             cerr << "MPI_Gather failed!" << endl;
             MPI_Finalize();
             return 1;
         }
 
-        // Rank 0: Consolidate and print global top-k influencers
         if (rank == 0) {
             vector<pair<int, double>> allCandidates;
             for (int i = 0; i < size * k; ++i) {
-                int node = static_cast<int>(allPacked[2 * i]);
+                int localNode = static_cast<int>(allPacked[2 * i]);
                 double score = allPacked[2 * i + 1];
-                allCandidates.emplace_back(node, score);
+                int realNode = localToRealWorldMapping.count(localNode) ? localToRealWorldMapping[localNode] : localNode;
+                allCandidates.emplace_back(realNode, score);
             }
 
-            // Merge duplicates (same node may appear from multiple processes)
             unordered_map<int, double> merged;
             for (const auto& [node, score] : allCandidates) {
-                if (merged.count(node))
-                    merged[node] = max(merged[node], score); // Keep the highest score
-                else
-                    merged[node] = score;
+                merged[node] = max(merged[node], score);
             }
 
-            // Get global top-K from merged scores
             auto globalTopK = getTopKInfluencers(merged, k);
 
             cout << "\n[Rank 0] Global Top-" << k << " Influencers for Graph: " << gtype << endl;
             for (const auto& [node, score] : globalTopK) {
                 cout << "Node " << node << " -> Score: " << score << endl;
             }
+
+            // Update global allNodeScores map
+            int idx = gtypeIndex[gtype];
+            for (const auto& [node, score] : globalTopK) {
+                if (!allNodeScores.count(node)) {
+                    allNodeScores[node] = vector<double>(4, 0.0);
+                }
+                allNodeScores[node][idx] = score;
+            }
+        }
+    }
+
+    // After all graphs processed, compute final weighted score
+    if (rank == 0) {
+        vector<double> weights = {0.3, 0.2, 0.4, 0.01}; // mention, retweet, reply, social
+        vector<pair<int, double>> finalScores;
+
+        for (const auto& [node, vec] : allNodeScores) {
+            double overall = 0.0;
+            for (int i = 0; i < 4; ++i) {
+                overall += weights[i] * vec[i];
+            }
+            finalScores.emplace_back(node, overall);
+        }
+
+        sort(finalScores.begin(), finalScores.end(), [](const auto& a, const auto& b) {
+            return a.second > b.second;
+        });
+
+        int final_k = 10;
+        cout << "\n========== FINAL GLOBAL TOP-" << final_k << " INFLUENCERS ==========\n";
+        for (int i = 0; i < min(final_k, (int)finalScores.size()); ++i) {
+            int node = finalScores[i].first;
+            double score = finalScores[i].second;
+            const auto& vec = allNodeScores[node];
+            cout << "Node " << node << " -> Overall Score: " << score
+                 << " [Mention: " << vec[0] << ", Retweet: " << vec[1]
+                 << ", Reply: " << vec[2] << ", Social: " << vec[3] << "]\n";
         }
     }
 
