@@ -1,6 +1,6 @@
 from collections import defaultdict
 
-def convert_edgelist_to_metis(input_file, output_file):
+def convert_edgelist_to_metis(input_file, output_file, mapping_file=None):
     adj = defaultdict(set)
 
     # Read edge list
@@ -20,6 +20,8 @@ def convert_edgelist_to_metis(input_file, output_file):
     # Remap node IDs to contiguous 1-based IDs
     all_nodes = sorted(adj.keys())
     node_mapping = {node: idx + 1 for idx, node in enumerate(all_nodes)}
+    reverse_mapping = {idx + 1: node for idx, node in enumerate(all_nodes)}
+    
     remapped_adj = defaultdict(set)
 
     for u in adj:
@@ -42,7 +44,27 @@ def convert_edgelist_to_metis(input_file, output_file):
             else:
                 f.write("\n")  # Empty line for isolated nodes
 
+    # Save node mapping to file if specified
+    if mapping_file:
+        with open(mapping_file, 'w') as f:
+            f.write("# METIS_ID ORIGINAL_ID\n")
+            for metis_id, original_id in reverse_mapping.items():
+                f.write(f"{metis_id} {original_id}\n")
+        print(f"Node mapping saved to {mapping_file}")
+
     print(f"Converted {input_file} -> {output_file} with {len(remapped_adj)} nodes and {edge_count} edges.")
+    
+    # Return mappings for programmatic use
+    return node_mapping, reverse_mapping
 
 # Example usage
-convert_edgelist_to_metis("datasets/higgs-social_network.edgelist", "higgs-social_network.graph")
+if __name__ == "__main__":
+    input_file = "datasets/higgs-social_network.edgelist"
+    output_file = "higgs-social_network.graph"
+    mapping_file = "higgs-social_network.mapping"
+    
+    metis_to_original, original_to_metis = convert_edgelist_to_metis(
+        input_file, 
+        output_file, 
+        mapping_file
+    )
