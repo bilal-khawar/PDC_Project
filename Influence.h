@@ -66,6 +66,13 @@ unordered_map<int, double> computeInfluenceScores(
                 int union_size = node_neighbors.size() + nbr_neighbors.size() - intersection;
                 double jaccard = union_size > 0 ? static_cast<double>(intersection) / union_size : 0.0;
 
+                // Fallbacck
+                if (jaccard == 0.0){
+                    //jaccard = 1.0 / (node_neighbors.size() + nbr_neighbors.size());
+                    //jaccard = 1.0 / (1 + std::abs(static_cast<int>(node_neighbors.size()) - static_cast<int>(nbr_neighbors.size())));
+                    jaccard = 1.0/(node_neighbors.size() + nbr_neighbors.size());
+                    jaccard /= 49;
+                }
                 score += weight * jaccard;
             }
 

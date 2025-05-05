@@ -17,6 +17,7 @@ using namespace std;
 
 // Define NUM_PARTS, adjust it based on the number of processes you are running.
 #define NUM_PARTS 8
+#define K 10
 
 int main(int argc, char** argv) {
     MPI_Init(&argc, &argv);
@@ -80,29 +81,29 @@ int main(int argc, char** argv) {
 
         unordered_map<int, double> scores = computeInfluenceScores(local_subgraph);
 
-        int k = 10;
-        vector<pair<int, double>> localTopK = getTopKInfluencers(scores, k);
+        // int k = 10;
+        vector<pair<int, double>> localTopK = getTopKInfluencers(scores, K);
 
         if (rank == 0) {
-            cout << "\n[Rank " << rank << "] Local Top-" << k << " Influencers for Graph: " << gtype << endl;
+            cout << "\n[Rank " << rank << "] Local Top-" << K << " Influencers for Graph: " << gtype << endl;
             for (const auto& [node, score] : localTopK) {
                 cout << "Node " << node << " -> Score: " << score << endl;
             }
         }
 
-        vector<double> packedLocal(2 * k);
-        for (int i = 0; i < k; ++i) {
+        vector<double> packedLocal(2 * K);
+        for (int i = 0; i < K; ++i) {
             packedLocal[2 * i] = static_cast<double>(localTopK[i].first);
             packedLocal[2 * i + 1] = localTopK[i].second;
         }
 
         vector<double> allPacked;
         if (rank == 0) {
-            allPacked.resize(2 * k * size);
+            allPacked.resize(2 * K * size);
         }
 
-        int gather_status = MPI_Gather(packedLocal.data(), 2 * k, MPI_DOUBLE,
-                                       allPacked.data(), 2 * k, MPI_DOUBLE,
+        int gather_status = MPI_Gather(packedLocal.data(), 2 * K, MPI_DOUBLE,
+                                       allPacked.data(), 2 * K, MPI_DOUBLE,
                                        0, MPI_COMM_WORLD);
 
         if (gather_status != MPI_SUCCESS) {
@@ -113,7 +114,7 @@ int main(int argc, char** argv) {
 
         if (rank == 0) {
             vector<pair<int, double>> allCandidates;
-            for (int i = 0; i < size * k; ++i) {
+            for (int i = 0; i < size * K; ++i) {
                 int localNode = static_cast<int>(allPacked[2 * i]);
                 double score = allPacked[2 * i + 1];
                 int realNode = localToRealWorldMapping.count(localNode) ? localToRealWorldMapping[localNode] : localNode;
@@ -125,9 +126,9 @@ int main(int argc, char** argv) {
                 merged[node] = max(merged[node], score);
             }
 
-            auto globalTopK = getTopKInfluencers(merged, k);
+            auto globalTopK = getTopKInfluencers(merged, K);
 
-            cout << "\n[Rank 0] Global Top-" << k << " Influencers for Graph: " << gtype << endl;
+            cout << "\n[Rank 0] Global Top-" << K << " Influencers for Graph: " << gtype << endl;
             for (const auto& [node, score] : globalTopK) {
                 cout << "Node " << node << " -> Score: " << score << endl;
             }
@@ -145,7 +146,7 @@ int main(int argc, char** argv) {
 
     // After all graphs processed, compute final weighted score
     if (rank == 0) {
-        vector<double> weights = {0.3, 0.2, 0.4, 0.01}; // mention, retweet, reply, social
+        vector<double> weights = {0.3, 0.5, 0.4, 0.01}; // mention, retweet, reply, social
         vector<pair<int, double>> finalScores;
 
         for (const auto& [node, vec] : allNodeScores) {
@@ -160,15 +161,15 @@ int main(int argc, char** argv) {
             return a.second > b.second;
         });
 
-        int final_k = 10;
-        cout << "\n========== FINAL GLOBAL TOP-" << final_k << " INFLUENCERS ==========\n";
-        for (int i = 0; i < min(final_k, (int)finalScores.size()); ++i) {
+        // int final_k = 10;
+        cout << "\n========== FINAL GLOBAL TOP-" << K << " INFLUENCERS ==========\n";
+        for (int i = 0; i < min(K, (int)finalScores.size()); ++i) {
             int node = finalScores[i].first;
             double score = finalScores[i].second;
             const auto& vec = allNodeScores[node];
-            cout << "Node " << node << " -> Overall Score: " << score
-                 << " [Mention: " << vec[0] << ", Retweet: " << vec[1]
-                 << ", Reply: " << vec[2] << ", Social: " << vec[3] << "]\n";
+            cout << "Node " << node << " -> Overall Score: " << score << endl;
+                 //<< " [Mention: " << vec[0] << ", Retweet: " << vec[1]
+                 //<< ", Reply: " << vec[2] << ", Social: " << vec[3] << "]\n";
         }
     }
 
