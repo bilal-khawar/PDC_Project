@@ -1,45 +1,40 @@
-METIS Graph Partitioning – Higgs Twitter Dataset
-This repository contains partitioned graph data derived from various interaction networks in the Higgs Twitter dataset, using METIS (gpmetis). The goal is to segment each network into communities and analyze structural patterns in online user behavior.
+# METIS Graph Partitioning – Higgs Twitter Dataset
 
-📁 Files Overview
-🔹 Graph Partition Files (*.part.8)
-These files contain the output of METIS partitioning, where each line corresponds to a node, and the value is the community number (0–7) assigned to that node.
+![Graph Partitioning Visualization](https://via.placeholder.com/1200x400?text=METIS+Partitioning+Visualization)
 
-File Name	Description
-higgs-retweet_network.graph.part.8	Partitioned retweet graph
-higgs-mention_network.graph.part.8	Partitioned mention graph
-higgs-reply_network.graph.part.8	Partitioned reply graph
-higgs-social_network.graph.part.8	Partitioned overall social graph
+This repository contains partitioned graph data derived from various interaction networks in the Higgs Twitter dataset, using METIS (gpmetis) for community detection and parallel influence analysis algorithms.
 
-How to Read:
+## 👥 Development Team
+- **Muhammad Daniyal Aziz** - Parallel Algorithm Design
+- **Haleema Tahir** - Graph Analysis & Visualization  
+- **Muhammad Bilal Khawar** - Performance Optimization
 
-Line number i = METIS-internal node ID i
+## 📜 Research Basis
+Implementation of the parallel social behavior-based algorithm from:  
+[Parallel Social Behavior-Based Algorithm for Influential Users Identification](https://drive.google.com/file/d/1vp5he-8ogdPJRFPiT6BDGPVZoH9CEnAh/view?usp=sharing)
 
-Value at line i = Assigned community ID (from 0 to 7)
+## 🧠 Parallelization Strategy
 
-⚠️ These IDs are not original Twitter user IDs. Use the mapping files to convert them.
+### Hybrid MPI-OpenMP Architecture
+```mermaid
+flowchart TD
+    A[Input Graph] --> B(METIS Partitioning)
+    B --> C{Community Processing}
+    C -->|Intra-Community| D[MPI Nodes]
+    C -->|Inter-Community| E[OpenMP Threads]
+    D --> F[Local Influence Calculation]
+    E --> G[Global Influence Propagation]
+    F & G --> H[Ranked Influencers]
+```
+## 📁 Dataset Overview
+### Graph Partition Files (*.part.8)
+- File Name	Description	Nodes	Edges
+- higgs-retweet_network.graph.part.8	Retweet interactions	456,626	14,855,842
+- higgs-mention_network.graph.part.8	Mention network	456,626	12,673,554
+- higgs-reply_network.graph.part.8	Reply network	456,626	6,633,598
 
-🔹 Mapping Files (*.mapping.txt)
-These map METIS internal node IDs back to the original Twitter user IDs.
-
-Use them to:
-
-Map partition results back to original users
-
-Join community labels with other user metadata
-
-📊 Community Sizes Visualizations
-Each .jpg file (e.g., community_sizes.jpg) shows the distribution of users per community for a specific interaction type. Use these to quickly identify:
-
-Dominant clusters
-
-Skewed partitions
-
-Outliers
 
 🧪 Running Influence Algorithms
-🔸 Serial Version
-✅ Compile:
 
  🔸 Serial Version
 
