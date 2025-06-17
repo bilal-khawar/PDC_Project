@@ -1,12 +1,10 @@
 # METIS Graph Partitioning – Higgs Twitter Dataset
 
-![Graph Partitioning Visualization](https://via.placeholder.com/1200x400?text=METIS+Partitioning+Visualization)
-
 This repository contains partitioned graph data derived from various interaction networks in the Higgs Twitter dataset, using METIS (gpmetis) for community detection and parallel influence analysis algorithms.
 
 ## 👥 Development Team
-- **Muhammad Daniyal Aziz** - Parallel Algorithm Design
-- **Haleema Tahir** - Graph Analysis & Visualization  
+- **Muhammad Daniyal Aziz** - Graph Analysis & Visualization/ Testing 
+- **Haleema Tahir** - Parallel Algorithm Design
 - **Muhammad Bilal Khawar** - Performance Optimization
 
 ## 📜 Research Basis
